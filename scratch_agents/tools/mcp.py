@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import sys
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -21,7 +22,7 @@ def _create_mcp_tool(mcp_tool, connection: dict) -> FunctionTool:
     """Create a FunctionTool that wraps an MCP tool."""
 
     async def call_mcp(**kwargs):
-        async with stdio_client(StdioServerParameters(**connection)) as (read, write):
+        async with stdio_client(StdioServerParameters(**connection), errlog=sys.__stderr__) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 result = await session.call_tool(mcp_tool.name, kwargs)
@@ -52,7 +53,8 @@ async def load_mcp_tools(connection: dict) -> list[BaseTool]:
     """
     tools: list[BaseTool] = []
 
-    async with stdio_client(StdioServerParameters(**connection)) as (read, write):
+    # Jupyter's stderr has no OS file descriptor for the Windows subprocess fallback.
+    async with stdio_client(StdioServerParameters(**connection), errlog=sys.__stderr__) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             mcp_tools = await session.list_tools()
@@ -91,7 +93,7 @@ async def mcp_connection(connection: dict):
         env=connection.get("env"),
     )
 
-    async with stdio_client(server_params) as (read, write):
+    async with stdio_client(server_params, errlog=sys.__stderr__) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             yield session

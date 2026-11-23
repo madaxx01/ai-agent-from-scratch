@@ -35,19 +35,35 @@ def is_correct(prediction: str | None, answer: str) -> bool:
         return False
     return prediction.strip().lower() == answer.strip().lower()
 
+def _uses_deepseek_json_mode(model: str) -> bool:
+    return model.startswith("deepseek/") or model.startswith("deepseek-")
+
+
 async def solve_problem(model: str, question: str) -> GaiaOutput:
     """Solve a single problem and return structured output."""
     provider = get_provider(model)
 
+    system_content = gaia_prompt
+    completion_kwargs: dict = {"model": model, "num_retries": 2}
+    if _uses_deepseek_json_mode(model):
+        system_content = (
+            f"{gaia_prompt}\n\n"
+            "Return JSON with keys is_solvable (boolean), unsolvable_reason (string), "
+            'and final_answer (string). Example: {"is_solvable": true, "unsolvable_reason": "", '
+            '"final_answer": "42"}'
+        )
+        completion_kwargs["response_format"] = {"type": "json_object"}
+        completion_kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+    else:
+        completion_kwargs["response_format"] = GaiaOutput
+
     async with PROVIDER_SEMAPHORES[provider]:
         response = await acompletion(
-            model=model,
             messages=[
-                {"role": "system", "content": gaia_prompt},
+                {"role": "system", "content": system_content},
                 {"role": "user", "content": question},
             ],
-            response_format=GaiaOutput,
-            num_retries=2,
+            **completion_kwargs,
         )
         finish_reason = response.choices[0].finish_reason
         content = response.choices[0].message.content
